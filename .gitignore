@@ -1,0 +1,11 @@
+# Secrets: the bot's SpacetimeDB token. Never commit.
+.token-*
+bot/.token-*
+# Logs and decision traces
+*.log
+bot/decisions-*.jsonl
+bot/primey.log
+# Dependencies
+node_modules/
+bot/node_modules/
+.DS_Store
