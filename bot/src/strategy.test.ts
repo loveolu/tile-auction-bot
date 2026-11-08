@@ -52,3 +52,26 @@ test("a bid is decided well inside the 1-second auction window", () => {
   chooseWords(c);
   assert.ok(performance.now() - t0 < 150, "took too long");
 });
+
+test("brain futures reuse identical contexts and refresh on horizon or rack changes", async () => {
+  const { Brain } = await import("./brain.js");
+  const { Trie } = await import("./trie.js");
+  const trie = new Trie(["AT", "CAT", "CATS"]);
+  let partitions = 0;
+  const partition = trie.partition.bind(trie);
+  trie.partition = (...args) => { partitions++; return partition(...args); };
+  const brain = new Brain(trie, () => 0.5);
+  // Check cache reuse without bid(), which intentionally updates the horizon.
+  const cache = brain as unknown as { futures(c: Ctx): { samples: unknown[] } };
+  const c = ctx("CAT", { nRem: 3, params: { ...DEFAULT_PARAMS, kKey: 1 } });
+  const first = cache.futures(c);
+  assert.equal(partitions, 1);
+  assert.equal(first.samples.length, c.params.samples, "duplicate draws retain their weight");
+  assert.equal(cache.futures({ ...c, rack: countsOf("CAT") }), first);
+  assert.equal(partitions, 1, "identical contexts must reuse samples");
+  const shorter = cache.futures({ ...c, nRem: 2 });
+  assert.notEqual(shorter, first);
+  assert.equal(partitions, 2);
+  assert.equal(cache.futures({ ...c, nRem: 2 }), shorter);
+  assert.notEqual(cache.futures({ ...c, nRem: 2, rack: countsOf("CATS") }), shorter);
+});

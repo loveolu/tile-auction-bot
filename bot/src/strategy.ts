@@ -46,7 +46,9 @@ export interface Params {
   starveMin: number; // starve only cashes a 5+ word worth at least this
   rebidDown: number; // live client: 1 = after playing words, revise the bid down as well as up
   brainPremium: number; // 1 = brain mode bids >= premium x market for a letter completing a 7+ word now
-  lagK?: number; // endgame lag margin: give up the last auctions when lagK*rttP90+300 > auction window (default 2)
+  lagK?: number;
+  phiFix?: number; // 1 = correct normal CDF in pWinAt/paidAt (see PhiOld)
+  kKey?: number;   // 1 = futures cache also keyed on the sampled-horizon k, so plans refresh as auctions run out // endgame lag margin: give up the last auctions when lagK*rttP90+300 > auction window (default 2)
 }
 
 export const DEFAULT_PARAMS: Params = {
@@ -56,7 +58,7 @@ export const DEFAULT_PARAMS: Params = {
   leftover: 0,
   samples: 24, kMax: 13, kPrice: 13, futureValueScale: 1.14, lambdaMax: 4, lambdaScale: 0.7,
   coinBonus: 0.32, playMargin: 2.7, playCandidates: 8, maxPlays: 3,
-  rebuild: 0, rebuildTiles: 9, rebuildBalance: 30, premiumCap: 0.7, premiumUntil: 15, rivalCap: 1, calRate: 0, starve: 0, cash7: 30, bump: 0, seedPlan: 0, cash7pick: 0, starveMin: 0, rebidDown: 0, brainPremium: 0, lagK: 1,
+  rebuild: 0, rebuildTiles: 9, rebuildBalance: 30, premiumCap: 0.7, premiumUntil: 15, rivalCap: 1, calRate: 0, starve: 0, cash7: 30, bump: 0, seedPlan: 0, cash7pick: 0, starveMin: 0, rebidDown: 0, brainPremium: 0, lagK: 1, kKey: 1,
 };
 
 // Phase curve of live prices (first to last auction), same refit.
@@ -64,19 +66,30 @@ export const PHASE = [1.20,1.11,1.06,1.03,1.03,1.00,0.99,1.02,0.99,1.02,1.03,1.0
 const SIGMA = 0.33; // log-normal spread of the highest rival bid
 
 // Standard normal CDF (Abramowitz-Stegun 7.1.26, |err| < 1.5e-7).
-function Phi(x: number): number {
+// BUG (found Nov 7 by review): this is the A&S erf approximation used as a normal CDF
+// without the sqrt(2) scaling or the 0.5(1+erf) map: Phi(0) = 0, Phi(0-) = 1. Kept as
+// the default until the fix (phiFix) is validated, since every parameter was tuned on it.
+function PhiOld(x: number): number {
   const t = 1 / (1 + 0.3275911 * Math.abs(x));
   const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x / 2);
   return x >= 0 ? y : 1 - y;
 }
-// P(highest rival bid < b) and E[highest rival bid | it is < b] for median m.
-export function pWinAt(b: number, m: number): number {
-  return b <= 0 ? 0 : Phi((Math.log(b) - Math.log(m)) / SIGMA);
+// Standard normal CDF via A&S 7.1.26 erf (|err| < 1e-7).
+function PhiNew(x: number): number {
+  const z = Math.abs(x) / Math.SQRT2;
+  const t = 1 / (1 + 0.3275911 * z);
+  const erf = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-z * z);
+  return 0.5 * (1 + (x >= 0 ? erf : -erf));
 }
-export function paidAt(b: number, m: number): number {
-  const p = pWinAt(b, m);
+const Phi = (x: number, fix = false) => (fix ? PhiNew(x) : PhiOld(x));
+// P(highest rival bid < b) and E[highest rival bid | it is < b] for median m.
+export function pWinAt(b: number, m: number, fix = false): number {
+  return b <= 0 ? 0 : Phi((Math.log(b) - Math.log(m)) / SIGMA, fix);
+}
+export function paidAt(b: number, m: number, fix = false): number {
+  const p = pWinAt(b, m, fix);
   if (p < 1e-6) return b;
-  return Math.min(b, m * Math.exp(SIGMA * SIGMA / 2) * Phi((Math.log(b) - Math.log(m) - SIGMA * SIGMA) / SIGMA) / p);
+  return Math.min(b, m * Math.exp(SIGMA * SIGMA / 2) * Phi((Math.log(b) - Math.log(m) - SIGMA * SIGMA) / SIGMA, fix) / p);
 }
 // Median highest rival bid for a letter now: fitted market × phase × what
 // this table has actually been paying (cal) × a bigger-table premium.

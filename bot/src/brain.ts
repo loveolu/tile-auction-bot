@@ -37,16 +37,24 @@ function drawInto(pool: Counts, k: number, rand: () => number, out: Counts) {
 class Futures {
   readonly key: string;
   samples: Sample[] = [];
-  constructor(readonly trie: Trie, readonly rack: Counts, readonly seed = 0) { this.key = rack.join(","); }
+  constructor(readonly trie: Trie, readonly rack: Counts, readonly seed = 0, key?: string) { this.key = key ?? rack.join(","); }
   add(pool: Counts, k: number, n: number, rand: () => number) {
+    // Keep every draw and its statistical weight, but share deterministic
+    // search results when two draws contain exactly the same future tiles.
+    const unique = k <= 2 ? new Map(this.samples.map(s => [s.future.join(","), s])) : undefined;
     for (let s = 0; s < n; s++) {
       const ks = Math.floor(k) + (rand() < k - Math.floor(k) ? 1 : 0);
       const future = new Int32Array(26);
       drawInto(pool, ks, rand, future);
+      const key = unique ? future.join(",") : "";
+      const prior = unique?.get(key);
+      if (prior) { this.samples.push(prior); continue; }
       const r = Int32Array.from(this.rack);
       for (let i = 0; i < 26; i++) r[i]! += future[i]!;
       const p = this.trie.partition(r);
-      this.samples.push({ future, base: p.total, words: p.words, delta: new Float64Array(26).fill(NaN), after: new Map() });
+      const sample = { future, base: p.total, words: p.words, delta: new Float64Array(26).fill(NaN), after: new Map<string, number>() };
+      unique?.set(key, sample);
+      this.samples.push(sample);
     }
   }
   base(): number {
@@ -118,11 +126,12 @@ export class Brain {
 
   private futures(ctx: Ctx): Futures {
     const p = ctx.params;
-    const key = ctx.rack.join(",");
-    if (!this.table || this.table.key !== key) this.table = new Futures(this.trie, ctx.rack, p.seedPlan);
-    const t = this.table;
     const future = Math.max(0, ctx.nRem - 1);
     if (this.k < 0) this.k = Math.min(p.kMax, future, ctx.balance / p.kPrice);
+    // kKey: plans also refresh as the horizon shrinks (auctions lost with the rack unchanged).
+    const key = ctx.rack.join(",") + (p.kKey ? "|" + Math.round(Math.min(this.k, future)) : "");
+    if (!this.table || this.table.key !== key) this.table = new Futures(this.trie, ctx.rack, p.seedPlan, key);
+    const t = this.table;
     const k = Math.min(this.k, future);
     if (t.samples.length < p.samples) t.add(this.pool(ctx), k, p.samples - t.samples.length, this.rand);
     return t;
@@ -164,8 +173,8 @@ export class Brain {
       for (let i = 0; i < 26; i++) {
         if (counts[i]! <= 0 || values[i]! <= 0) continue;
         const b = values[i]! / lambda;
-        const pw = b > cap ? 1 : pWinAt(b, m[i]!);
-        spend += counts[i]! * pw * Math.min(cap, paidAt(b, m[i]!));
+        const pw = b > cap ? 1 : pWinAt(b, m[i]!, p.phiFix === 1);
+        spend += counts[i]! * pw * Math.min(cap, paidAt(b, m[i]!, p.phiFix === 1));
         wins += counts[i]! * pw;
       }
       return { spend, wins };
@@ -211,7 +220,7 @@ export class Brain {
       let bestU = 0;
       const top = Math.min(ctx.balance, v / this.lambda, (ctx.rivalsMax ?? Infinity) + 1);
       for (let b = 1; b <= top; b++) {
-        const u = (v / this.lambda - b) * pWinAt(b, m);
+        const u = (v / this.lambda - b) * pWinAt(b, m, ctx.params.phiFix === 1);
         if (u > bestU) { bestU = u; best = b; }
       }
       bid = best;
