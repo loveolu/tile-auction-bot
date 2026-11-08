@@ -119,6 +119,7 @@ Known failure modes seen live: hot tables (clearing 13–14, LUCENT/gas/Lbender/
 - Restart the Mac (a stuck `contactsd` uses one core). Only after the bot is stopped.
 
 ## Ideas not done (in order of expected value)
+0. K-13 clone in the sim lineup (its repo is public; rivals may run it as-is or tuned), then paired tests of anti-mirror tweaks and per-rival bid models. User asked for this Nov 7 10:20 PM; nothing built.
 1. Per-rival bid models (Nijello's Tobit fits, bananatruck/scrabblebot-evo & 3nvyx/nijello-scabble-bot: K-13/Bron/maverick follow the market; LUCENT flat). K-13 says worth "a few coins".
 2. Play-or-hold when broke: the brain holds 7-letter words for 40+ auctions when balance <15 (λ low). A fix must beat `utd` paired, not a threshold rule (starve=25 lost live).
 3. Exact partition dump (ours is top-12 greedy, ~1–2 pts).

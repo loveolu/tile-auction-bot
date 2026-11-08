@@ -46,9 +46,9 @@ export interface Params {
   starveMin: number; // starve only cashes a 5+ word worth at least this
   rebidDown: number; // live client: 1 = after playing words, revise the bid down as well as up
   brainPremium: number; // 1 = brain mode bids >= premium x market for a letter completing a 7+ word now
-  lagK?: number;
+  lagK?: number;   // endgame lag margin: give up the last auctions when lagK*rttP90+300 > auction window (default 2)
   phiFix?: number; // 1 = correct normal CDF in pWinAt/paidAt (see PhiOld)
-  kKey?: number;   // 1 = futures cache also keyed on the sampled-horizon k, so plans refresh as auctions run out // endgame lag margin: give up the last auctions when lagK*rttP90+300 > auction window (default 2)
+  kKey?: number;   // 1 = futures cache also keyed on the sampled-horizon k, so plans refresh as auctions run out
 }
 
 export const DEFAULT_PARAMS: Params = {
@@ -174,11 +174,11 @@ export function solveLambda(ctx: Ctx, vNow: number, li: number): number {
     let spend = 0;
     let income = 0;
     const bNow = Math.min(ctx.balance, vNow / lambda);
-    spend += pWinAt(bNow, mNow) * paidAt(bNow, mNow);
+    spend += pWinAt(bNow, mNow, P.phiFix === 1) * paidAt(bNow, mNow, P.phiFix === 1);
     for (const L of letters) {
       const b = Math.min(ctx.balance, L.g / lambda);
-      const p = pWinAt(b, mNow === 0 ? L.m : L.m);
-      spend += L.e * p * paidAt(b, L.m);
+      const p = pWinAt(b, mNow === 0 ? L.m : L.m, P.phiFix === 1);
+      spend += L.e * p * paidAt(b, L.m, P.phiFix === 1);
       income += L.e * p * L.g;
     }
     return spend - (ctx.balance + P.incomeShare * income);
@@ -216,7 +216,7 @@ export function decideBid(ctx: Ctx, letter: string): number {
       let bestU = 0;
       const top = Math.min(ctx.balance, v / lambda);
       for (let b = 1; b <= top; b++) {
-        const u = (v / lambda - b) * pWinAt(b, m);
+        const u = (v / lambda - b) * pWinAt(b, m, P.phiFix === 1);
         if (u > bestU) { bestU = u; best = b; }
       }
       bid = best;
@@ -240,7 +240,7 @@ export function decideBid(ctx: Ctx, letter: string): number {
       let bestU = 0;
       const top = Math.min(ctx.balance, bid, (ctx.rivalsMax ?? Infinity) + 1);
       for (let b = 1; b <= top; b++) {
-        const u = (bid - b) * pWinAt(b, m);
+        const u = (bid - b) * pWinAt(b, m, P.phiFix === 1);
         if (u > bestU) { bestU = u; best = b; }
       }
       bid = best;
