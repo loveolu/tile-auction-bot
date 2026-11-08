@@ -1,3 +1,9 @@
+# TOURNAMENT 3 RESULT (Sat Nov 7, 11:40 PM - 12:00 AM CT): 17 Swiss pts, cut line 18, ELIMINATED at the cut (tied 9th-11th of 76)
+R1 3rd/7 87 (Lbender table) · R2 2nd/6 88 (scrabblefish won) · R3 3rd/7 57 (evol, Karppa) · R4 3rd/7 64 (GodOfThudner, Lucy). Never below 3rd, never 1st. One table win anywhere would have made the cut.
+Cut: evol 21, apex 20, StickBot 19, larper 19, LexForger 19, gas 18 (tiebreak over scrabblemaxxing/GodOfThudner on total). Admin deleted tournament 2 and recreated it as 3 at ~10:47 PM: registration had to be redone (re-register on every new id).
+Build that played: cash7 30, lagK 1, kKey 1 (horizon-keyed futures cache), reconnect fix, shared short-horizon samples; Phi bug left in (phiFix 0).
+Post-mortem leads, in order: (1) retune with phiFix 1; (2) first-7-word speed (we buy ~2 tiles more than leaders before it); (3) K-13 clone + per-rival bid models; (4) rebid-after-words uses static formula; (5) a 7-seat Swiss table pays the same 6-1 points, so 3rd at 7 seats = 4 pts.
+
 # >>> NEXT SESSION: START HERE (written Sat Nov 7 ~9:20 PM CT) <<<
 
 Status at handoff:
@@ -114,6 +120,9 @@ Known failure modes seen live: hot tables (clearing 13–14, LUCENT/gas/Lbender/
 - The sim overrates us vs weak clones; only `utd` and live are trusted for hot-table questions.
 
 ## AFTER the tournament (not before — risk without benefit)
+- index.ts onAuction: the re-bid after playing words uses static decideBid even in brain mode (rebidDown 0 → replaces the brain bid whenever the static one is higher, ~3 auctions/match). Route it through the same policy as the first bid, then paired-test (sim does not model this path; A/B live).
+- index.ts rackFor: pending-word reservation is a fixed 3000 ms; server RTT reaches 4 s. Use max(3000, 2.5 × rttP90()).
+- brain.ts bidInner: first-price branch has no drain floor / completion premium (Vickrey branch only). Only matters if a tournament is first-price.
 - Remove dead/rejected flags from strategy.ts + brain.ts (bump, brainPremium, calRate, rebuild, cash7pick if not shipped, old static lambda 0/1 path) and their versions.ts entries.
 - `git init` at ~/Projects/dallashack (`.gitignore` already excludes .token-*, logs, node_modules), commit, user pushes to a public GitHub repo, link on Devpost.
 - Restart the Mac (a stuck `contactsd` uses one core). Only after the bot is stopped.
